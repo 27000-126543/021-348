@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ledger-cleaner"
+version = "1.0.0"
+description = "变更洽商台账整理工具 - 批量清理历史台账数据"
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=2.0.0",
+    "openpyxl>=3.1.0",
+    "click>=8.1.0",
+    "python-dateutil>=2.8.0",
+]
+
+[project.scripts]
+ledger = "ledger_cleaner.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
