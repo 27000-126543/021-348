@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional as _Optional
 
 STANDARD_STATUS = {
     "未报审": ["未报审", "未提交", "待报审", "待提交", "未上报", "草稿"],

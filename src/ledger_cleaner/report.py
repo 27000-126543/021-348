@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 import pandas as pd
 from datetime import datetime
 
@@ -18,33 +20,53 @@ class ReportGenerator:
         if not issues:
             return ""
 
-        df = pd.DataFrame([issue.to_dict() for issue in issues])
+        try:
+            os.makedirs(output_path, exist_ok=True)
+        except Exception as e:
+            raise RuntimeError(f"无法创建输出目录: {output_path}, 错误: {str(e)}")
+
+        try:
+            df = pd.DataFrame([issue.to_dict() for issue in issues])
+        except Exception as e:
+            raise RuntimeError(f"生成问题清单数据时出错: {str(e)}")
 
         column_order = ["文件名称", "行号", "列名", "问题类型", "问题描述", "建议补充", "当前值"]
         df = df.reindex(columns=column_order)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = f"{project_name}_{project_month}_问题清单_{timestamp}.xlsx"
+        safe_project_name = "".join(c for c in project_name if c.isalnum() or c in ("-", "_"))
+        file_name = f"{safe_project_name}_{project_month}_问题清单_{timestamp}.xlsx"
         full_path = os.path.join(output_path, file_name)
 
-        with pd.ExcelWriter(full_path, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name="问题清单", index=False)
+        try:
+            with pd.ExcelWriter(full_path, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name="问题清单", index=False)
 
-            worksheet = writer.sheets["问题清单"]
-            for column in worksheet.columns:
-                max_length = 0
-                column_letter = column[0].column_letter
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                adjusted_width = min(max_length + 2, 60)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
+                try:
+                    worksheet = writer.sheets["问题清单"]
+                    for column in worksheet.columns:
+                        max_length = 0
+                        column_letter = column[0].column_letter
+                        for cell in column:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        adjusted_width = min(max_length + 2, 60)
+                        worksheet.column_dimensions[column_letter].width = adjusted_width
+                except Exception:
+                    pass
 
-            summary_df = self._get_issue_summary_dataframe(issues)
-            summary_df.to_excel(writer, sheet_name="问题汇总", index=False)
+                try:
+                    summary_df = self._get_issue_summary_dataframe(issues)
+                    summary_df.to_excel(writer, sheet_name="问题汇总", index=False)
+                except Exception:
+                    pass
+        except PermissionError:
+            raise RuntimeError(f"无法写入文件 {full_path}，文件可能被Excel打开。请关闭Excel后重试。")
+        except Exception as e:
+            raise RuntimeError(f"写入Excel文件时出错: {str(e)}")
 
         return full_path
 

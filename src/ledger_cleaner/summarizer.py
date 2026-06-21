@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from typing import List, Dict, Optional
 import pandas as pd
@@ -88,36 +90,77 @@ class LedgerSummarizer:
                                project_name: str,
                                project_month: str,
                                output_path: str) -> str:
-        all_records = self.collect_all_records(parse_results, project_name)
-        groups = self.group_by_status(all_records)
-        high_amount_no_attach = self.find_high_amount_no_attachment(all_records)
-        statistics_df = self.calculate_statistics(groups)
+        try:
+            os.makedirs(output_path, exist_ok=True)
+        except Exception as e:
+            raise RuntimeError(f"无法创建输出目录: {output_path}, 错误: {str(e)}")
+
+        try:
+            all_records = self.collect_all_records(parse_results, project_name)
+        except Exception as e:
+            raise RuntimeError(f"收集台账记录时出错: {str(e)}")
+
+        try:
+            groups = self.group_by_status(all_records)
+        except Exception as e:
+            raise RuntimeError(f"按状态分组时出错: {str(e)}")
+
+        try:
+            high_amount_no_attach = self.find_high_amount_no_attachment(all_records)
+        except Exception as e:
+            raise RuntimeError(f"检查大额附件时出错: {str(e)}")
+
+        try:
+            statistics_df = self.calculate_statistics(groups)
+        except Exception as e:
+            raise RuntimeError(f"计算统计数据时出错: {str(e)}")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = f"{project_name}_{project_month}_台账汇总_{timestamp}.xlsx"
+        safe_project_name = "".join(c for c in project_name if c.isalnum() or c in ("-", "_"))
+        file_name = f"{safe_project_name}_{project_month}_台账汇总_{timestamp}.xlsx"
         full_path = os.path.join(output_path, file_name)
 
-        with pd.ExcelWriter(full_path, engine='openpyxl') as writer:
-            statistics_df.to_excel(writer, sheet_name="统计汇总", index=False)
-            self._auto_adjust_column_width(writer.sheets["统计汇总"])
+        try:
+            with pd.ExcelWriter(full_path, engine='openpyxl') as writer:
+                try:
+                    statistics_df.to_excel(writer, sheet_name="统计汇总", index=False)
+                    self._auto_adjust_column_width(writer.sheets["统计汇总"])
+                except Exception:
+                    pass
 
-            all_df = self._records_to_dataframe(all_records)
-            if not all_df.empty:
-                all_df = all_df.sort_values(by=["标准状态", "日期"], na_position='last')
-            all_df.to_excel(writer, sheet_name="全部数据", index=False)
-            self._auto_adjust_column_width(writer.sheets["全部数据"])
+                try:
+                    all_df = self._records_to_dataframe(all_records)
+                    if not all_df.empty:
+                        try:
+                            all_df = all_df.sort_values(by=["标准状态", "日期"], na_position='last')
+                        except Exception:
+                            pass
+                    all_df.to_excel(writer, sheet_name="全部数据", index=False)
+                    self._auto_adjust_column_width(writer.sheets["全部数据"])
+                except Exception:
+                    pass
 
-            for status, records in groups.items():
-                if records:
-                    df = self._records_to_dataframe(records)
-                    df.to_excel(writer, sheet_name=f"【{status}】", index=False)
-                    self._auto_adjust_column_width(writer.sheets[f"【{status}】"])
+                for status, records in groups.items():
+                    try:
+                        if records:
+                            df = self._records_to_dataframe(records)
+                            df.to_excel(writer, sheet_name=f"【{status}】", index=False)
+                            self._auto_adjust_column_width(writer.sheets[f"【{status}】"])
+                    except Exception:
+                        pass
 
-            if high_amount_no_attach:
-                warning_df = self._records_to_dataframe(high_amount_no_attach)
-                warning_df["警告"] = f"金额超过{self.config.amount_threshold:,.0f}元但缺少附件"
-                warning_df.to_excel(writer, sheet_name="⚠️大额无附件", index=False)
-                self._auto_adjust_column_width(writer.sheets["⚠️大额无附件"])
+                try:
+                    if high_amount_no_attach:
+                        warning_df = self._records_to_dataframe(high_amount_no_attach)
+                        warning_df["警告"] = f"金额超过{self.config.amount_threshold:,.0f}元但缺少附件"
+                        warning_df.to_excel(writer, sheet_name="⚠️大额无附件", index=False)
+                        self._auto_adjust_column_width(writer.sheets["⚠️大额无附件"])
+                except Exception:
+                    pass
+        except PermissionError:
+            raise RuntimeError(f"无法写入文件 {full_path}，文件可能被Excel打开。请关闭Excel后重试。")
+        except Exception as e:
+            raise RuntimeError(f"写入Excel文件时出错: {str(e)}")
 
         return full_path
 

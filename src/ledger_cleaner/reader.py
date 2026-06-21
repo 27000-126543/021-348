@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import os
 import glob
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 import pandas as pd
 from datetime import datetime
 import re
@@ -121,18 +123,70 @@ class ExcelReader:
         result = FileParseResult(file_name=file_name)
 
         try:
-            df = pd.read_excel(file_path)
-            result.raw_data = df
+            if not os.path.exists(file_path):
+                result.parse_success = False
+                result.error_message = "文件不存在"
+                result.issues.append(ValidationIssue(
+                    file_name=file_name,
+                    row_number=0,
+                    column="",
+                    issue_type="文件错误",
+                    description=f"文件不存在: {file_path}",
+                    suggestion="请检查文件路径是否正确，文件是否被移动或删除。",
+                ))
+                return result
+
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                result.parse_success = False
+                result.error_message = "文件为空"
+                result.issues.append(ValidationIssue(
+                    file_name=file_name,
+                    row_number=0,
+                    column="",
+                    issue_type="文件错误",
+                    description="文件大小为0字节，可能是损坏或未正确保存",
+                    suggestion="请重新导出Excel文件，确保文件内容完整。",
+                ))
+                return result
         except Exception as e:
-            result.parse_success = False
-            result.error_message = f"文件读取失败: {str(e)}"
             result.issues.append(ValidationIssue(
                 file_name=file_name,
                 row_number=0,
                 column="",
                 issue_type="文件错误",
-                description=f"无法读取Excel文件: {str(e)}",
-                suggestion="请检查文件是否损坏或格式是否正确",
+                description=f"访问文件时出错: {str(e)}",
+                suggestion="请检查文件是否被其他程序占用，或是否有读取权限。",
+            ))
+            return result
+
+        try:
+            df = pd.read_excel(file_path)
+            result.raw_data = df
+        except Exception as e:
+            result.parse_success = False
+            result.error_message = f"文件读取失败: {str(e)}"
+            error_msg = str(e).lower()
+            suggestion = "请检查文件是否损坏或格式是否正确。"
+            if "corrupt" in error_msg or "损坏" in error_msg:
+                description = "Excel文件已损坏，无法读取"
+                suggestion = "请尝试用Excel打开文件并重新保存，或重新导出数据。"
+            elif "unsupported" in error_msg or "不支持" in error_msg:
+                description = "不支持的文件格式"
+                suggestion = "请确保文件格式为 .xlsx 或 .xls 格式。"
+            elif "password" in error_msg or "密码" in error_msg:
+                description = "Excel文件有密码保护"
+                suggestion = "请先解除Excel文件的密码保护后再试。"
+            else:
+                description = f"无法读取Excel文件: {str(e)}"
+
+            result.issues.append(ValidationIssue(
+                file_name=file_name,
+                row_number=0,
+                column="",
+                issue_type="文件错误",
+                description=description,
+                suggestion=suggestion,
             ))
             return result
 
@@ -142,8 +196,19 @@ class ExcelReader:
                 row_number=0,
                 column="",
                 issue_type="数据为空",
-                description="Excel文件中没有数据",
-                suggestion="请确认文件中是否包含台账数据",
+                description="Excel文件中没有数据行，可能只有表头或文件为空",
+                suggestion="请确认文件中是否包含台账数据，第一行为表头，第二行起为数据。",
+            ))
+            return result
+
+        if len(df) == 0 or (len(df) == 1 and all(pd.isna(v) for v in df.iloc[0])):
+            result.issues.append(ValidationIssue(
+                file_name=file_name,
+                row_number=0,
+                column="",
+                issue_type="数据为空",
+                description="Excel文件只有表头，没有数据行",
+                suggestion="请在表头下方添加台账数据记录。",
             ))
             return result
 
@@ -151,13 +216,22 @@ class ExcelReader:
         missing_columns = [col for col in self.config.required_columns if col not in detected_columns]
 
         if missing_columns:
+            actual_columns = [str(c) for c in df.columns]
+            missing_details = []
+            for col in missing_columns:
+                aliases = self.config.column_mappings.get(col, [])
+                missing_details.append(f"\n    • {col}（支持写法: {', '.join(aliases[:4])}）")
+
             result.issues.append(ValidationIssue(
                 file_name=file_name,
                 row_number=0,
                 column="",
-                issue_type="缺少列",
-                description=f"缺少必要的列: {', '.join(missing_columns)}",
-                suggestion=f"请添加以下列或检查列名是否正确: {', '.join(missing_columns)}。可使用的列名别名请参考配置文档。",
+                issue_type="缺少必要列",
+                description=f"缺少必要的列: {', '.join(missing_columns)}\n"
+                           f"当前文件中的列: {', '.join(actual_columns)}\n"
+                           f"缺少的列需要的写法包括: {''.join(missing_details)}",
+                suggestion=f"请在Excel中添加缺失的列，或修改列名使其与标准列名匹配。\n"
+                          f"运行 'ledger status' 可查看所有支持的列名写法。",
             ))
             return result
 

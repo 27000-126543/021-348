@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import List, Dict, Tuple, Optional
 from collections import defaultdict
 from datetime import datetime
@@ -128,18 +130,71 @@ class DataValidator:
                      project_month: Optional[str] = None) -> List[ValidationIssue]:
         all_issues = []
 
-        for result in parse_results:
-            all_issues.extend(result.issues)
+        try:
+            for result in parse_results:
+                all_issues.extend(result.issues)
+        except Exception as e:
+            all_issues.append(ValidationIssue(
+                file_name="系统",
+                row_number=0,
+                column="",
+                issue_type="校验错误",
+                description=f"收集已有问题时出错: {str(e)}",
+                suggestion="请检查文件数据格式是否正常。",
+            ))
 
-        all_issues.extend(self.check_duplicate_numbers(parse_results))
+        try:
+            all_issues.extend(self.check_duplicate_numbers(parse_results))
+        except Exception as e:
+            all_issues.append(ValidationIssue(
+                file_name="系统",
+                row_number=0,
+                column="编号",
+                issue_type="校验错误",
+                description=f"检查编号重复时出错: {str(e)}",
+                suggestion="请检查编号列的数据是否正常。",
+            ))
 
-        all_issues.extend(self.check_date_range(parse_results, project_month))
+        try:
+            all_issues.extend(self.check_date_range(parse_results, project_month))
+        except Exception as e:
+            all_issues.append(ValidationIssue(
+                file_name="系统",
+                row_number=0,
+                column="日期",
+                issue_type="校验错误",
+                description=f"检查日期范围时出错: {str(e)}",
+                suggestion="请检查日期列的数据格式是否正常。",
+            ))
 
-        all_issues.extend(self.check_amount_threshold_attachment(parse_results))
+        try:
+            all_issues.extend(self.check_amount_threshold_attachment(parse_results))
+        except Exception as e:
+            all_issues.append(ValidationIssue(
+                file_name="系统",
+                row_number=0,
+                column="金额/附件",
+                issue_type="校验错误",
+                description=f"检查大额附件时出错: {str(e)}",
+                suggestion="请检查金额和附件列的数据是否正常。",
+            ))
 
-        all_issues.extend(self.check_status_consistency(parse_results))
+        try:
+            all_issues.extend(self.check_status_consistency(parse_results))
+        except Exception as e:
+            all_issues.append(ValidationIssue(
+                file_name="系统",
+                row_number=0,
+                column="状态",
+                issue_type="校验错误",
+                description=f"检查状态一致性时出错: {str(e)}",
+                suggestion="请检查状态列的数据是否正常。",
+            ))
 
-        all_issues.sort(key=lambda x: (x.file_name, x.row_number))
+        try:
+            all_issues.sort(key=lambda x: (x.file_name, x.row_number))
+        except Exception:
+            pass
 
         return all_issues
 

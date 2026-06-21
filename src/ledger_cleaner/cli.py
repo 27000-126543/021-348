@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import os
 import sys
+import traceback
+import functools
 import click
 from typing import Optional
 
@@ -10,8 +14,42 @@ from .report import ReportGenerator
 from .summarizer import LedgerSummarizer
 
 
+def handle_errors(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except click.exceptions.ClickException:
+            raise
+        except SystemExit:
+            raise
+        except KeyboardInterrupt:
+            click.echo()
+            click.echo("⏹️  操作已取消")
+            sys.exit(130)
+        except Exception as e:
+            click.echo()
+            click.echo("=" * 60, err=True)
+            click.echo(f"❌ 运行出错: {str(e)}", err=True)
+            click.echo("=" * 60, err=True)
+            click.echo()
+            click.echo("ℹ️  详细错误信息:", err=True)
+            click.echo("-" * 60, err=True)
+            traceback.print_exc()
+            click.echo("-" * 60, err=True)
+            click.echo()
+            click.echo("💡 如果此问题持续出现，请检查:", err=True)
+            click.echo("   - Excel文件是否正常打开", err=True)
+            click.echo("   - 数据格式是否正确", err=True)
+            click.echo("   - 是否有足够的磁盘空间", err=True)
+            click.echo()
+            sys.exit(1)
+    return wrapper
+
+
 @click.group()
 @click.version_option(version="1.0.0", prog_name="ledger-cleaner")
+@handle_errors
 def cli():
     """变更洽商台账整理工具 - 批量清理历史台账数据
 
@@ -36,6 +74,7 @@ def cli():
 @click.option('--threshold', '-t', default=50000, type=float,
               help='大额审批附件阈值（元），默认50000元')
 @click.option('--yes', '-y', is_flag=True, help='跳过确认直接输出报告')
+@handle_errors
 def check(input, project, month, output, threshold, yes):
     """检查台账数据质量，生成问题清单
 
@@ -121,6 +160,7 @@ def check(input, project, month, output, threshold, yes):
 @click.option('--threshold', '-t', default=50000, type=float,
               help='大额审批附件阈值（元），默认50000元')
 @click.option('--force', '-f', is_flag=True, help='即使有问题也强制生成汇总（不推荐）')
+@handle_errors
 def export(input, project, month, output, threshold, force):
     """生成标准台账汇总文件
 
@@ -200,6 +240,7 @@ def export(input, project, month, output, threshold, force):
               help='示例文件生成路径')
 @click.option('--include-errors', '-e', is_flag=True,
               help='生成包含常见错误的示例文件（用于测试）')
+@handle_errors
 def demo(path, include_errors):
     """生成示例台账文件
 
@@ -275,6 +316,7 @@ def demo(path, include_errors):
 
 
 @cli.command()
+@handle_errors
 def status():
     """查看标准状态列表和列名映射"""
     config = ValidationConfig()
